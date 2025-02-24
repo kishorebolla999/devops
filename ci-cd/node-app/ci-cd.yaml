@@ -1,0 +1,53 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: linux-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Docker image
+        run: docker build -t node-app:latest .
+
+      - name: Load Docker image into Minikube
+        run: |
+          eval $(minikube docker-env)
+          docker load -i <(docker save node-app:latest)
+
+  deploy:
+    runs-on: linux-latest
+    needs: build
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0' # Or your Minikube version
+
+      - name: Set up Minikube context
+        run: |
+          minikube config view --minify > kubeconfig.minikube
+          kubectl config use-context minikube
+          export KUBECONFIG=kubeconfig.minikube
+
+      - name: Apply Kubernetes deployment
+        run: kubectl apply -f deployment.yaml
+
+      - name: Check deployment status
+        run: kubectl rollout status deployment/node-app-deployment --timeout=60s
